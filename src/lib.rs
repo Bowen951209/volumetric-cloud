@@ -1,7 +1,7 @@
 mod camera;
 mod texture;
 
-use camera::CameraController;
+use camera::{CameraController, CameraUniform};
 use wgpu::util::DeviceExt;
 use winit::{
     event::*,
@@ -13,27 +13,6 @@ use winit::{
 use crate::camera::Camera;
 use crate::texture::Texture;
 use winit::window::Window;
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct CameraUniform {
-    // We can't use cgmath with bytemuck directly, so we'll have
-    // to convert the Matrix4 into a 4x4 f32 array
-    view_proj: [[f32; 4]; 4],
-}
-
-impl CameraUniform {
-    fn new() -> Self {
-        use cgmath::SquareMatrix;
-        Self {
-            view_proj: cgmath::Matrix4::identity().into(),
-        }
-    }
-
-    fn update_view_proj(&mut self, camera: &Camera) {
-        self.view_proj = camera.build_view_projection_matrix().into();
-    }
-}
 
 struct State<'a> {
     surface: wgpu::Surface<'a>,
