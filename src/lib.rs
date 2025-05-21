@@ -216,7 +216,7 @@ impl<'a> State<'a> {
 
         let camera = Camera {
             eye: (0.0, 1.0, 2.0).into(),
-            target: (0.0, 0.0, 0.0).into(),
+            direction: -cgmath::Vector3::unit_z(),
             up: cgmath::Vector3::unit_y(),
             aspect: config.width as f32 / config.height as f32,
             fovy: 45.0,
@@ -257,7 +257,7 @@ impl<'a> State<'a> {
             label: Some("camera_bind_group"),
         });
 
-        let camera_controller = CameraController::new(0.2);
+        let camera_controller = CameraController::new(0.2, 0.01);
 
         let obj_model = resources::load_model(
             &PathBuf::from("./assets/cube.obj"),
