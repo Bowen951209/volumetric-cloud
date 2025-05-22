@@ -1,4 +1,4 @@
-use cgmath::{InnerSpace, Matrix3, Rad, Vector3};
+use cgmath::{InnerSpace, Matrix3, Rad, SquareMatrix, Vector3};
 use winit::{
     dpi::PhysicalPosition,
     event::{ElementState, KeyEvent, WindowEvent},
@@ -175,22 +175,31 @@ impl CameraController {
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct CameraUniform {
     // We can't use cgmath with bytemuck directly, so we'll have
     // to convert the Matrix4 into a 4x4 f32 array
-    view_proj: [[f32; 4]; 4],
+    view_proj_inv: [[f32; 4]; 4],
+    cam_pos: [f32; 3],
+    _padding: f32,
 }
 
 impl CameraUniform {
     pub fn new() -> Self {
         use cgmath::SquareMatrix;
         Self {
-            view_proj: cgmath::Matrix4::identity().into(),
+            view_proj_inv: cgmath::Matrix4::identity().into(),
+            cam_pos: [0.0, 0.0, 0.0],
+            ..Default::default()
         }
     }
 
-    pub fn update_view_proj(&mut self, camera: &Camera) {
-        self.view_proj = camera.build_view_projection_matrix().into();
+    pub fn update(&mut self, camera: &Camera) {
+        self.view_proj_inv = camera
+            .build_view_projection_matrix()
+            .invert()
+            .unwrap()
+            .into();
+        self.cam_pos = camera.eye.into();
     }
 }
