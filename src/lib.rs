@@ -1,9 +1,7 @@
 mod camera;
-mod model;
 mod texture;
 
 use camera::{CameraController, CameraUniform};
-use model::DrawModel;
 use wgpu::{TextureView, util::DeviceExt};
 use winit::{
     event::*,
@@ -29,7 +27,6 @@ struct State<'a> {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    fullscreen_quad: model::Mesh,
 }
 
 impl<'a> State<'a> {
@@ -144,9 +141,6 @@ impl<'a> State<'a> {
 
         let camera_controller = CameraController::new(0.2, 0.01);
 
-        let fullscreen_quad =
-            model::Mesh::create_full_screen_quad(&device, Some("full screen quad"));
-
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
@@ -160,7 +154,7 @@ impl<'a> State<'a> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[model::Mesh::vertex_buffer_layout()],
+                buffers: &[],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -215,7 +209,6 @@ impl<'a> State<'a> {
             camera_uniform,
             camera_buffer,
             camera_bind_group,
-            fullscreen_quad,
         }
     }
 
@@ -287,7 +280,11 @@ impl<'a> State<'a> {
                 occlusion_query_set: None,
             });
 
-            render_pass.draw_mesh(&self.render_pipeline, &self.fullscreen_quad);
+            // Draw full screen quad.
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            // No vertex buffer. The vertices are hardcoded in the vertex shader.
+            render_pass.draw(0..6, 0..1);
         }
 
         // submit will accept anything that implements IntoIter
