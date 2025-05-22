@@ -1,4 +1,5 @@
 mod camera;
+mod models;
 mod texture;
 
 use camera::{CameraController, CameraUniform};
@@ -26,7 +27,8 @@ struct State<'a> {
     camera_controller: CameraController,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
-    camera_bind_group: wgpu::BindGroup,
+    screen_size_buffer: wgpu::Buffer,
+    raymarch_uniform_bind_group: wgpu::BindGroup,
 }
 
 impl<'a> State<'a> {
@@ -102,7 +104,7 @@ impl<'a> State<'a> {
         };
 
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(&camera);
+        camera_uniform.update(&camera);
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Buffer"),
@@ -110,36 +112,82 @@ impl<'a> State<'a> {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let camera_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-                label: Some("camera_bind_group_layout"),
-            });
+        let aabb = models::AABB::new([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]);
 
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &camera_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-            label: Some("camera_bind_group"),
+        let aabb_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("AABB Buffer"),
+            contents: bytemuck::cast_slice(&[aabb]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let camera_controller = CameraController::new(0.2, 0.01);
+        let screen_size_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Screen Size Buffer"),
+            contents: bytemuck::cast_slice(&[config.width, config.height]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let raymarch_uniform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+                label: Some("raymarch_uniform_bind_group_layout"),
+            });
+
+        let raymarch_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &raymarch_uniform_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: aabb_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: screen_size_buffer.as_entire_binding(),
+                },
+            ],
+            label: Some("raymarch_uniform_bind_group"),
+        });
+
+        let camera_controller = CameraController::new(0.02, 0.005);
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout],
+                bind_group_layouts: &[&raymarch_uniform_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -203,7 +251,8 @@ impl<'a> State<'a> {
             camera_controller,
             camera_uniform,
             camera_buffer,
-            camera_bind_group,
+            screen_size_buffer,
+            raymarch_uniform_bind_group,
         }
     }
 
@@ -219,6 +268,12 @@ impl<'a> State<'a> {
             self.surface.configure(&self.device, &self.config);
             self.depth_texture_view =
                 texture::create_depth_texture_view(&self.device, &self.config, "depth_texture");
+            self.camera.aspect = new_size.width as f32 / new_size.height as f32;
+            self.queue.write_buffer(
+                &self.screen_size_buffer,
+                0,
+                bytemuck::cast_slice(&[new_size.width, new_size.height]),
+            );
         }
     }
 
@@ -228,7 +283,7 @@ impl<'a> State<'a> {
 
     fn update(&mut self) {
         self.camera_controller.update_camera(&mut self.camera);
-        self.camera_uniform.update_view_proj(&self.camera);
+        self.camera_uniform.update(&self.camera);
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
@@ -277,7 +332,7 @@ impl<'a> State<'a> {
 
             // Draw full screen quad.
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(0, &self.raymarch_uniform_bind_group, &[]);
             // No vertex buffer. The vertices are hardcoded in the vertex shader.
             render_pass.draw(0..6, 0..1);
         }
