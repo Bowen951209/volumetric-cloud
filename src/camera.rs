@@ -31,6 +31,7 @@ impl Camera {
     }
 }
 
+#[derive(Default)]
 pub struct CameraController {
     move_speed: f32,
     rotation_speed: f32,
@@ -40,6 +41,7 @@ pub struct CameraController {
     is_right_pressed: bool,
     is_up_pressed: bool,
     is_down_pressed: bool,
+    is_mouse_pressed: bool,
     delta_vertical_angle: f64,
     delta_horizontal_angle: f64,
     last_mouse_position: Option<PhysicalPosition<f64>>,
@@ -50,15 +52,7 @@ impl CameraController {
         Self {
             move_speed,
             rotation_speed,
-            is_forward_pressed: false,
-            is_backward_pressed: false,
-            is_left_pressed: false,
-            is_right_pressed: false,
-            is_up_pressed: false,
-            is_down_pressed: false,
-            delta_vertical_angle: 0.0,
-            delta_horizontal_angle: 0.0,
-            last_mouse_position: None,
+            ..Default::default()
         }
     }
 
@@ -102,17 +96,25 @@ impl CameraController {
                     _ => false,
                 }
             }
-            WindowEvent::CursorMoved { position, .. } => {
-                if let Some(last_mouse_position) = self.last_mouse_position {
-                    let delta_x = position.x - last_mouse_position.x;
-                    let delta_y = position.y - last_mouse_position.y;
-
-                    self.delta_horizontal_angle = -delta_x;
-                    self.delta_vertical_angle = -delta_y;
-                }
-                self.last_mouse_position = Some(*position);
+            WindowEvent::MouseInput { state, .. } => {
+                self.is_mouse_pressed = state.is_pressed();
                 true
             }
+            WindowEvent::CursorMoved { position, .. } => match self.is_mouse_pressed {
+                true => {
+                    if let Some(last_mouse_position) = self.last_mouse_position {
+                        let delta_x = position.x - last_mouse_position.x;
+                        let delta_y = position.y - last_mouse_position.y;
+
+                        self.delta_horizontal_angle = -delta_x;
+                        self.delta_vertical_angle = -delta_y;
+                    }
+
+                    self.last_mouse_position = Some(*position);
+                    true
+                }
+                false => false,
+            },
             WindowEvent::CursorLeft { .. } => {
                 self.last_mouse_position = None;
                 true
