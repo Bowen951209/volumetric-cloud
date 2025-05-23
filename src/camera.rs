@@ -113,7 +113,10 @@ impl CameraController {
                     self.last_mouse_position = Some(*position);
                     true
                 }
-                false => false,
+                false => {
+                    self.last_mouse_position = None;
+                    false
+                }
             },
             WindowEvent::CursorLeft { .. } => {
                 self.last_mouse_position = None;
