@@ -62,8 +62,8 @@ fn fs_main(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
         return vec4<f32>(0.0); // miss
     }
 
-    let color = (t_max - t_min) / 10.0;
-    return vec4<f32>(color, color, color, 1.0);
+    let color = raymarch(&ray, t_min, t_max, 0.1);
+    return vec4<f32>(color, 1.0);
 }
 
 fn intersect_aabb(ray: ptr<function, Ray>,
@@ -91,4 +91,49 @@ fn intersect_aabb(ray: ptr<function, Ray>,
     *t_min_out = t_min;
     *t_max_out = t_max;
     return true;
+}
+
+fn raymarch(ray: ptr<function, Ray>, t_min: f32, t_max: f32, step: f32) -> vec3<f32> {
+    const LIGHT_POS = vec3<f32>(-2.0, 2.0, 2.0);
+    const DENISTY = 0.8;
+
+    var color_accum = vec3<f32>(0.0);
+    var density_accum = 0.0;
+
+    for(var t = t_min; t < t_max; t += step) {
+        let pos = ray.origin + ray.direction * t;
+
+        density_accum += DENISTY * (1.0 - density_accum);
+
+        let distance_to_light = distance(pos, LIGHT_POS);
+        let light_direction = (LIGHT_POS - pos) / distance_to_light;
+
+        var light_amount = 1.0;
+        for(var u = 0.0; u < distance_to_light; u += step) {
+            let sample_pos = pos + light_direction * u;
+            var temp1:f32;
+            var temp2:f32;
+            var aabb = aabb;
+            var ray = Ray(sample_pos, light_direction);
+            if (!intersect_aabb(&ray, &aabb, &temp1, &temp2)) {
+                break;
+            }
+
+            light_amount *= exp(-DENISTY * step * 0.3);
+
+            if (light_amount <= 0.01) {
+                break;
+            }
+        }
+
+        let contrib = DENISTY * (1.0 - density_accum);
+        color_accum += vec3<f32>(light_amount) * contrib;
+        density_accum += contrib;
+
+        if(density_accum > 0.95) {
+            break;
+        }
+    }
+
+    return color_accum;
 }
