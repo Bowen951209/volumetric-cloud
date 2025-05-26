@@ -3,6 +3,7 @@ mod models;
 mod texture;
 
 use camera::{CameraController, CameraUniform};
+use cgmath::{Angle, Rad};
 use wgpu::{TextureView, util::DeviceExt};
 use winit::{
     event::*,
@@ -28,7 +29,9 @@ struct State<'a> {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     screen_size_buffer: wgpu::Buffer,
+    light_pos_buffer: wgpu::Buffer,
     raymarch_uniform_bind_group: wgpu::BindGroup,
+    time: std::time::Instant,
 }
 
 impl<'a> State<'a> {
@@ -126,6 +129,12 @@ impl<'a> State<'a> {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
+        let light_pos_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Light Pos Buffer"),
+            contents: bytemuck::cast_slice(&[0.0, 0.0, 0.0]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
         let raymarch_uniform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
@@ -159,6 +168,16 @@ impl<'a> State<'a> {
                         },
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ],
                 label: Some("raymarch_uniform_bind_group_layout"),
             });
@@ -177,6 +196,10 @@ impl<'a> State<'a> {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: screen_size_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: light_pos_buffer.as_entire_binding(),
                 },
             ],
             label: Some("raymarch_uniform_bind_group"),
@@ -238,6 +261,8 @@ impl<'a> State<'a> {
             cache: None,
         });
 
+        let time = std::time::Instant::now();
+
         Self {
             surface,
             device,
@@ -252,7 +277,9 @@ impl<'a> State<'a> {
             camera_uniform,
             camera_buffer,
             screen_size_buffer,
+            light_pos_buffer,
             raymarch_uniform_bind_group,
+            time,
         }
     }
 
@@ -288,6 +315,13 @@ impl<'a> State<'a> {
             &self.camera_buffer,
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
+        );
+        const RADIUS: f32 = 2.0;
+        let time = self.time.elapsed().as_secs_f32();
+        self.queue.write_buffer(
+            &self.light_pos_buffer,
+            0,
+            bytemuck::cast_slice(&[RADIUS * Rad(time).cos(), 1.0, RADIUS * Rad(time).sin()]),
         );
     }
 

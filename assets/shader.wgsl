@@ -39,6 +39,8 @@ var<uniform> camera: CameraUniform;
 var<uniform> aabb: AABBUniform;
 @group(0) @binding(2)
 var<uniform> screen_size: vec2<u32>;
+@group(0) @binding(3)
+var<uniform> light_pos: vec3<f32>;
 
 @fragment
 fn fs_main(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
@@ -54,20 +56,24 @@ fn fs_main(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
         normalize(world_pos.xyz / world_pos.w - camera.cam_pos),
     );
 
-    var aabb = aabb;
+
+    if(intersect_sphere(ray, light_pos, 0.3)) {
+        return vec4(1.0);
+    }
 
     var t_min: f32;
     var t_max: f32;
-    if (!intersect_aabb(&ray, &aabb, &t_min, &t_max)) {
+    if (!intersect_aabb(ray, aabb, &t_min, &t_max)) {
         return vec4<f32>(0.0); // miss
     }
 
-    let color = raymarch(&ray, t_min, t_max, 0.1);
-    return vec4<f32>(color, 1.0);
+
+    let color = raymarch_in_box(ray, t_min, t_max, 0.1);
+    return color;
 }
 
-fn intersect_aabb(ray: ptr<function, Ray>,
-                  box: ptr<function, AABBUniform>,
+fn intersect_aabb(ray: Ray,
+                  box: AABBUniform,
                   t_min_out: ptr<function, f32>, t_max_out: ptr<function, f32>) -> bool {
     var t_min = -1e10;
     var t_max = 1e10;
@@ -93,47 +99,69 @@ fn intersect_aabb(ray: ptr<function, Ray>,
     return true;
 }
 
-fn raymarch(ray: ptr<function, Ray>, t_min: f32, t_max: f32, step: f32) -> vec3<f32> {
-    const LIGHT_POS = vec3<f32>(-2.0, 2.0, 2.0);
-    const DENISTY = 0.8;
+fn intersect_sphere(ray: Ray, sphere_center: vec3<f32>, radius: f32) -> bool {
+    let oc = ray.origin - sphere_center;
+    let a = dot(ray.direction, ray.direction);
+    let b = 2.0 * dot(oc, ray.direction);
+    let c = dot(oc, oc) - radius * radius;
+    let discriminant = b * b - 4.0 * a * c;
+    return discriminant > 0.0;
+}
 
-    var color_accum = vec3<f32>(0.0);
-    var density_accum = 0.0;
+const DENISTY = 0.8;
+
+fn raymarch_in_box(ray: Ray, t_min: f32, t_max: f32, step: f32) -> vec4<f32> {
+    var color = vec3<f32>(0.0);
+    var transmittance = 1.0;
 
     for(var t = t_min; t < t_max; t += step) {
         let pos = ray.origin + ray.direction * t;
+        let density = DENISTY;
 
-        density_accum += DENISTY * (1.0 - density_accum);
-
-        let distance_to_light = distance(pos, LIGHT_POS);
-        let light_direction = (LIGHT_POS - pos) / distance_to_light;
-
-        var light_amount = 1.0;
-        for(var u = 0.0; u < distance_to_light; u += step) {
-            let sample_pos = pos + light_direction * u;
-            var temp1:f32;
-            var temp2:f32;
-            var aabb = aabb;
-            var ray = Ray(sample_pos, light_direction);
-            if (!intersect_aabb(&ray, &aabb, &temp1, &temp2)) {
-                break;
-            }
-
-            light_amount *= exp(-DENISTY * step * 0.3);
-
-            if (light_amount <= 0.01) {
-                break;
-            }
+        if(density < 0.01) {
+            continue;
         }
 
-        let contrib = DENISTY * (1.0 - density_accum);
-        color_accum += vec3<f32>(light_amount) * contrib;
-        density_accum += contrib;
+        let distance_to_light = distance(pos, light_pos);
+        let ray_to_light = Ray(pos, (light_pos - pos) / distance_to_light);
+        let light = raymarch_to_light(ray_to_light, 0.1);
+        let phase = compute_phase(dot(ray.direction, ray_to_light.direction));
+        let scattered = vec3<f32>(density * light * phase);
 
-        if(density_accum > 0.95) {
+        color += scattered * transmittance;
+
+        transmittance *= exp(-density * 0.5 * step);
+        if (transmittance < 0.01) {
             break;
         }
     }
 
-    return color_accum;
+    
+    return vec4<f32>(vec3<f32>(color), 1.0 - transmittance);
+}
+
+
+fn raymarch_to_light(ray: Ray, step: f32) -> f32 {
+    var t_min: f32;
+    var t_max: f32;
+    intersect_aabb(ray, aabb, &t_min, &t_max);
+
+    var transmittance = 1.0;
+    for(var t = 0.0; t < t_max; t += step) {
+        let pos = ray.origin + ray.direction * t;
+        let density = DENISTY;
+        transmittance *= exp(-density * 0.5 * step);
+        if (transmittance < 0.01) {
+            break;
+        }
+    }
+
+    return transmittance;
+}
+
+const PI = radians(180.0);
+fn compute_phase(cosTheta: f32) -> f32 {
+    let g = 0.6;
+    let denom = 1.0 + g * g - 2.0 * g * cosTheta;
+    return (1.0 - g * g) / (4.0 * PI * pow(denom, 1.5));
 }
