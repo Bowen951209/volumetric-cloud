@@ -108,38 +108,31 @@ fn intersect_sphere(ray: Ray, sphere_center: vec3<f32>, radius: f32) -> bool {
     return discriminant > 0.0;
 }
 
-const DENISTY = 0.8;
-
 fn raymarch_in_box(ray: Ray, t_min: f32, t_max: f32, step: f32) -> vec4<f32> {
     var color = vec3<f32>(0.0);
     var transmittance = 1.0;
 
     for(var t = t_min; t < t_max; t += step) {
         let pos = ray.origin + ray.direction * t;
-        let density = DENISTY;
+        let density = sample_density(pos);
 
-        if(density < 0.01) {
-            continue;
-        }
-
-        let distance_to_light = distance(pos, light_pos);
-        let ray_to_light = Ray(pos, (light_pos - pos) / distance_to_light);
-        let light = raymarch_to_light(ray_to_light, 0.1);
-        let phase = compute_phase(dot(ray.direction, ray_to_light.direction));
-        let scattered = vec3<f32>(density * light * phase);
-
-        color += scattered * transmittance;
-
-        transmittance *= exp(-density * 0.5 * step);
+        transmittance *= beer_lambert(step, density);
         if (transmittance < 0.01) {
             break;
         }
+
+        if(density > 0.01) {
+            let distance_to_light = distance(pos, light_pos);
+            let ray_to_light = Ray(pos, (light_pos - pos) / distance_to_light);
+            let light = raymarch_to_light(ray_to_light, 0.1);
+
+            color += vec3<f32>(step * density * light * transmittance);
+        }        
     }
 
     
     return vec4<f32>(vec3<f32>(color), 1.0 - transmittance);
 }
-
 
 fn raymarch_to_light(ray: Ray, step: f32) -> f32 {
     var t_min: f32;
@@ -149,8 +142,8 @@ fn raymarch_to_light(ray: Ray, step: f32) -> f32 {
     var transmittance = 1.0;
     for(var t = 0.0; t < t_max; t += step) {
         let pos = ray.origin + ray.direction * t;
-        let density = DENISTY;
-        transmittance *= exp(-density * 0.5 * step);
+        let density = sample_density(pos);
+        transmittance *= beer_lambert(step, density);
         if (transmittance < 0.01) {
             break;
         }
@@ -159,9 +152,11 @@ fn raymarch_to_light(ray: Ray, step: f32) -> f32 {
     return transmittance;
 }
 
-const PI = radians(180.0);
-fn compute_phase(cosTheta: f32) -> f32 {
-    let g = 0.6;
-    let denom = 1.0 + g * g - 2.0 * g * cosTheta;
-    return (1.0 - g * g) / (4.0 * PI * pow(denom, 1.5));
+fn beer_lambert(distance: f32, density: f32) -> f32 {
+    return exp(-distance * density * 3.2);
+}
+
+fn sample_density(pos: vec3<f32>) -> f32 {
+    // TODO: use noise texture sample
+    return 0.8;
 }
