@@ -31,6 +31,7 @@ struct State<'a> {
     screen_size_buffer: wgpu::Buffer,
     light_pos_buffer: wgpu::Buffer,
     raymarch_uniform_bind_group: wgpu::BindGroup,
+    raymarch_texture_bind_group: wgpu::BindGroup,
     time: std::time::Instant,
 }
 
@@ -205,12 +206,78 @@ impl<'a> State<'a> {
             label: Some("raymarch_uniform_bind_group"),
         });
 
+        let noise_texture3d = texture::create_noise_texture_3d(
+            &device,
+            &queue,
+            wgpu::Extent3d {
+                width: 64,
+                height: 64,
+                depth_or_array_layers: 64,
+            },
+            Some("Noise Texture 3D"),
+            0,
+            0.08,
+        );
+
+        let raymarch_texture3d_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D3,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                        count: None,
+                    },
+                ],
+                label: Some("raymarch_texture_bind_group_layout"),
+            });
+
+        let raymarch_texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &raymarch_texture3d_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(
+                        &noise_texture3d.create_view(&Default::default()),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&device.create_sampler(
+                        &wgpu::SamplerDescriptor {
+                            address_mode_u: wgpu::AddressMode::ClampToEdge,
+                            address_mode_v: wgpu::AddressMode::ClampToEdge,
+                            address_mode_w: wgpu::AddressMode::ClampToEdge,
+                            mag_filter: wgpu::FilterMode::Nearest,
+                            min_filter: wgpu::FilterMode::Nearest,
+                            mipmap_filter: wgpu::FilterMode::Nearest,
+                            ..Default::default()
+                        },
+                    )),
+                },
+            ],
+            label: Some("raymarch_texture_bind_group"),
+        });
+
         let camera_controller = CameraController::new(0.02, 0.005);
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&raymarch_uniform_bind_group_layout],
+                bind_group_layouts: &[
+                    &raymarch_uniform_bind_group_layout,
+                    &raymarch_texture3d_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
 
@@ -279,6 +346,7 @@ impl<'a> State<'a> {
             screen_size_buffer,
             light_pos_buffer,
             raymarch_uniform_bind_group,
+            raymarch_texture_bind_group,
             time,
         }
     }
@@ -367,6 +435,7 @@ impl<'a> State<'a> {
             // Draw full screen quad.
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.raymarch_uniform_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.raymarch_texture_bind_group, &[]);
             // No vertex buffer. The vertices are hardcoded in the vertex shader.
             render_pass.draw(0..6, 0..1);
         }

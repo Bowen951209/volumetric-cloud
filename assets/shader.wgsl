@@ -42,6 +42,11 @@ var<uniform> screen_size: vec2<u32>;
 @group(0) @binding(3)
 var<uniform> light_pos: vec3<f32>;
 
+@group(1) @binding(0)
+var texture_noise: texture_3d<f32>;
+@group(1) @binding(1)
+var sampler_noise: sampler;
+
 @fragment
 fn fs_main(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
     let ndc = vec2<f32>(
@@ -157,6 +162,6 @@ fn beer_lambert(distance: f32, density: f32) -> f32 {
 }
 
 fn sample_density(pos: vec3<f32>) -> f32 {
-    // TODO: use noise texture sample
-    return 0.8;
+    let uvw = (pos - aabb.min) / (aabb.max - aabb.min);
+    return textureSample(texture_noise, sampler_noise, uvw).r;
 }
