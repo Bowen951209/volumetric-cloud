@@ -64,12 +64,10 @@ fn fs_main(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
     );
     let clip = vec4<f32>(ndc, -1.0, 1.0);
     let world_pos = camera.view_proj_inv * clip;
-
-    let blue_noise = blue_noise(uv); 
-
-    let ray_direction = normalize(world_pos.xyz / world_pos.w - camera.cam_pos);
-    let ray_origin = camera.cam_pos + 0.1 * blue_noise * ray_direction;
-    var ray = Ray(ray_origin, ray_direction);
+    var ray = Ray(
+        camera.cam_pos, 
+        normalize(world_pos.xyz / world_pos.w - camera.cam_pos)
+    );
 
 
     if(intersect_sphere(ray, light_pos, 0.3)) {
@@ -82,6 +80,9 @@ fn fs_main(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
         return vec4<f32>(0.0); // miss
     }
 
+    // jittering
+    let blue_noise = blue_noise(uv); 
+    t_min += blue_noise * 0.1;
 
     let color = raymarch_in_box(ray, t_min, t_max, 0.1);
     return color;
