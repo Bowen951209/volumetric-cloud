@@ -2,6 +2,8 @@ mod camera;
 mod models;
 mod texture;
 
+use std::path::Path;
+
 use camera::{CameraController, CameraUniform};
 use cgmath::{Angle, Rad};
 use wgpu::{TextureView, util::DeviceExt};
@@ -206,7 +208,7 @@ impl<'a> State<'a> {
             label: Some("raymarch_uniform_bind_group"),
         });
 
-        let noise_texture3d = texture::create_noise_texture_3d(
+        let cloud_noise_texture3d = texture::create_noise_texture_3d(
             &device,
             &queue,
             wgpu::Extent3d {
@@ -219,7 +221,11 @@ impl<'a> State<'a> {
             0.08,
         );
 
-        let raymarch_texture3d_bind_group_layout =
+        let blue_noise_texture =
+            texture::load_texture_2d_gray(&device, &queue, &Path::new("assets/blue_noise.png"))
+                .unwrap();
+
+        let raymarch_texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
@@ -238,21 +244,57 @@ impl<'a> State<'a> {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                        count: None,
+                    },
                 ],
                 label: Some("raymarch_texture_bind_group_layout"),
             });
 
         let raymarch_texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &raymarch_texture3d_bind_group_layout,
+            layout: &raymarch_texture_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::TextureView(
-                        &noise_texture3d.create_view(&Default::default()),
+                        &cloud_noise_texture3d.create_view(&Default::default()),
                     ),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&device.create_sampler(
+                        &wgpu::SamplerDescriptor {
+                            address_mode_u: wgpu::AddressMode::ClampToEdge,
+                            address_mode_v: wgpu::AddressMode::ClampToEdge,
+                            address_mode_w: wgpu::AddressMode::ClampToEdge,
+                            mag_filter: wgpu::FilterMode::Nearest,
+                            min_filter: wgpu::FilterMode::Nearest,
+                            mipmap_filter: wgpu::FilterMode::Nearest,
+                            ..Default::default()
+                        },
+                    )),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(
+                        &blue_noise_texture.create_view(&Default::default()),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
                     resource: wgpu::BindingResource::Sampler(&device.create_sampler(
                         &wgpu::SamplerDescriptor {
                             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -276,7 +318,7 @@ impl<'a> State<'a> {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
                     &raymarch_uniform_bind_group_layout,
-                    &raymarch_texture3d_bind_group_layout,
+                    &raymarch_texture_bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             });

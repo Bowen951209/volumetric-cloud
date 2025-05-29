@@ -43,23 +43,33 @@ var<uniform> screen_size: vec2<u32>;
 var<uniform> light_pos: vec3<f32>;
 
 @group(1) @binding(0)
-var texture_noise: texture_3d<f32>;
+var texture_cloud_noise: texture_3d<f32>;
 @group(1) @binding(1)
-var sampler_noise: sampler;
+var sampler_cloud_noise: sampler;
+@group(1) @binding(2)
+var texture_blue_noise: texture_2d<f32>;
+@group(1) @binding(3)
+var sampler_blue_noise: sampler;
 
 @fragment
 fn fs_main(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
-    let ndc = vec2<f32>(
-            (frag_coord.x / f32(screen_size.x)) * 2.0 - 1.0,
-            1.0 - (frag_coord.y / f32(screen_size.y)) * 2.0
-        );
+    let uv = vec2<f32>(
+        frag_coord.x / f32(screen_size.x),
+        frag_coord.y / f32(screen_size.y),
+    );
 
+    let ndc = vec2<f32>(
+            uv.x * 2.0 - 1.0,
+            1.0 - uv.y * 2.0
+    );
     let clip = vec4<f32>(ndc, -1.0, 1.0);
     let world_pos = camera.view_proj_inv * clip;
-    var ray = Ray (
-        camera.cam_pos,
-        normalize(world_pos.xyz / world_pos.w - camera.cam_pos),
-    );
+
+    let blue_noise = blue_noise(uv); 
+
+    let ray_direction = normalize(world_pos.xyz / world_pos.w - camera.cam_pos);
+    let ray_origin = camera.cam_pos + 0.1 * blue_noise * ray_direction;
+    var ray = Ray(ray_origin, ray_direction);
 
 
     if(intersect_sphere(ray, light_pos, 0.3)) {
@@ -163,5 +173,9 @@ fn beer_lambert(distance: f32, density: f32) -> f32 {
 
 fn sample_density(pos: vec3<f32>) -> f32 {
     let uvw = (pos - aabb.min) / (aabb.max - aabb.min);
-    return textureSample(texture_noise, sampler_noise, uvw).r;
+    return textureSample(texture_cloud_noise, sampler_cloud_noise, uvw).r;
+}
+
+fn blue_noise(uv: vec2<f32>) -> f32 {
+    return textureSample(texture_blue_noise, sampler_blue_noise, uv).r;
 }
