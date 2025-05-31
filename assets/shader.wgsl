@@ -39,35 +39,57 @@ var<uniform> camera: CameraUniform;
 var<uniform> aabb: AABBUniform;
 @group(0) @binding(2)
 var<uniform> screen_size: vec2<u32>;
+@group(0) @binding(3)
+var<uniform> light_pos: vec3<f32>;
+
+@group(1) @binding(0)
+var texture_cloud_noise: texture_3d<f32>;
+@group(1) @binding(1)
+var sampler_cloud_noise: sampler;
+@group(1) @binding(2)
+var texture_blue_noise: texture_2d<f32>;
+@group(1) @binding(3)
+var sampler_blue_noise: sampler;
 
 @fragment
 fn fs_main(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
-    let ndc = vec2<f32>(
-            (frag_coord.x / f32(screen_size.x)) * 2.0 - 1.0,
-            1.0 - (frag_coord.y / f32(screen_size.y)) * 2.0
-        );
-
-    let clip = vec4<f32>(ndc, -1.0, 1.0);
-    let world_pos = camera.view_proj_inv * clip;
-    var ray = Ray (
-        camera.cam_pos,
-        normalize(world_pos.xyz / world_pos.w - camera.cam_pos),
+    let uv = vec2<f32>(
+        frag_coord.x / f32(screen_size.x),
+        frag_coord.y / f32(screen_size.y),
     );
 
-    var aabb = aabb;
+    let ndc = vec2<f32>(
+            uv.x * 2.0 - 1.0,
+            1.0 - uv.y * 2.0
+    );
+    let clip = vec4<f32>(ndc, -1.0, 1.0);
+    let world_pos = camera.view_proj_inv * clip;
+    var ray = Ray(
+        camera.cam_pos, 
+        normalize(world_pos.xyz / world_pos.w - camera.cam_pos)
+    );
+
+
+    if(intersect_sphere(ray, light_pos, 0.3)) {
+        return vec4(1.0);
+    }
 
     var t_min: f32;
     var t_max: f32;
-    if (!intersect_aabb(&ray, &aabb, &t_min, &t_max)) {
+    if (!intersect_aabb(ray, aabb, &t_min, &t_max)) {
         return vec4<f32>(0.0); // miss
     }
 
-    let color = (t_max - t_min) / 10.0;
-    return vec4<f32>(color, color, color, 1.0);
+    // jittering
+    let blue_noise = blue_noise(uv); 
+    t_min += blue_noise * 0.1;
+
+    let color = raymarch_in_box(ray, t_min, t_max, 0.1);
+    return color;
 }
 
-fn intersect_aabb(ray: ptr<function, Ray>,
-                  box: ptr<function, AABBUniform>,
+fn intersect_aabb(ray: Ray,
+                  box: AABBUniform,
                   t_min_out: ptr<function, f32>, t_max_out: ptr<function, f32>) -> bool {
     var t_min = -1e10;
     var t_max = 1e10;
@@ -91,4 +113,76 @@ fn intersect_aabb(ray: ptr<function, Ray>,
     *t_min_out = t_min;
     *t_max_out = t_max;
     return true;
+}
+
+fn intersect_sphere(ray: Ray, sphere_center: vec3<f32>, radius: f32) -> bool {
+    let oc = ray.origin - sphere_center;
+    let a = dot(ray.direction, ray.direction);
+    let b = 2.0 * dot(oc, ray.direction);
+    let c = dot(oc, oc) - radius * radius;
+    let discriminant = b * b - 4.0 * a * c;
+    return discriminant > 0.0;
+}
+
+fn raymarch_in_box(ray: Ray, t_min: f32, t_max: f32, step: f32) -> vec4<f32> {
+    var color = vec3<f32>(0.0);
+    var transmittance = 1.0;
+
+    for(var t = t_min; t < t_max; t += step) {
+        let pos = ray.origin + ray.direction * t;
+        let density = sample_density(pos);
+
+        transmittance *= beer_lambert(step, density);
+        if (transmittance < 0.01) {
+            break;
+        }
+
+        if(density > 0.01) {
+            let distance_to_light = distance(pos, light_pos);
+            let ray_to_light = Ray(pos, (light_pos - pos) / distance_to_light);
+            let light = raymarch_to_light(ray_to_light, 0.1);
+
+            let phase = henyey_greenstein(dot(-ray.direction, ray_to_light.direction), 0.6);
+            color += vec3<f32>(step * density * light * transmittance * phase);
+        }        
+    }
+
+    
+    return vec4<f32>(vec3<f32>(color), 1.0 - transmittance);
+}
+
+fn raymarch_to_light(ray: Ray, step: f32) -> f32 {
+    var t_min: f32;
+    var t_max: f32;
+    intersect_aabb(ray, aabb, &t_min, &t_max);
+
+    var transmittance = 1.0;
+    for(var t = 0.0; t < t_max; t += step) {
+        let pos = ray.origin + ray.direction * t;
+        let density = sample_density(pos);
+        transmittance *= beer_lambert(step, density);
+        if (transmittance < 0.01) {
+            break;
+        }
+    }
+
+    return transmittance;
+}
+
+fn beer_lambert(distance: f32, density: f32) -> f32 {
+    return exp(-distance * density * 3.2);
+}
+
+fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
+    let g2 = g * g;
+    return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * cos_theta, 1.5) * 0.5;
+}
+
+fn sample_density(pos: vec3<f32>) -> f32 {
+    let uvw = (pos - aabb.min) / (aabb.max - aabb.min);
+    return textureSample(texture_cloud_noise, sampler_cloud_noise, uvw).r;
+}
+
+fn blue_noise(uv: vec2<f32>) -> f32 {
+    return textureSample(texture_blue_noise, sampler_blue_noise, uv).r;
 }
