@@ -142,7 +142,8 @@ fn raymarch_in_box(ray: Ray, t_min: f32, t_max: f32, step: f32) -> vec4<f32> {
             let ray_to_light = Ray(pos, (light_pos - pos) / distance_to_light);
             let light = raymarch_to_light(ray_to_light, 0.1);
 
-            color += vec3<f32>(step * density * light * transmittance);
+            let phase = henyey_greenstein(dot(-ray.direction, ray_to_light.direction), 0.6);
+            color += vec3<f32>(step * density * light * transmittance * phase);
         }        
     }
 
@@ -170,6 +171,11 @@ fn raymarch_to_light(ray: Ray, step: f32) -> f32 {
 
 fn beer_lambert(distance: f32, density: f32) -> f32 {
     return exp(-distance * density * 3.2);
+}
+
+fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
+    let g2 = g * g;
+    return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * cos_theta, 1.5) * 0.5;
 }
 
 fn sample_density(pos: vec3<f32>) -> f32 {
