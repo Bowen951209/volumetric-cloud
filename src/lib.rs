@@ -87,13 +87,9 @@ impl<'a> State<'a> {
             desired_maximum_frame_latency: 2,
         };
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        let raymarch_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                std::fs::read_to_string("./assets/shader.wgsl")
-                    .unwrap()
-                    .into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/raymarch.wgsl").into()),
         });
 
         let depth_texture_view =
@@ -327,13 +323,13 @@ impl<'a> State<'a> {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &shader,
+                module: &raymarch_shader,
                 entry_point: Some("vs_main"),
                 buffers: &[],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader,
+                module: &raymarch_shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
