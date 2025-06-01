@@ -1,4 +1,5 @@
 mod camera;
+mod gui;
 mod models;
 mod texture;
 
@@ -6,6 +7,7 @@ use std::path::Path;
 
 use camera::{CameraController, CameraUniform};
 use cgmath::{Angle, Rad};
+use gui::Gui;
 use wgpu::{TextureView, util::DeviceExt};
 use winit::{
     event::*,
@@ -35,6 +37,7 @@ struct State<'a> {
     raymarch_uniform_bind_group: wgpu::BindGroup,
     raymarch_texture_bind_group: wgpu::BindGroup,
     time: std::time::Instant,
+    gui: Gui,
 }
 
 impl<'a> State<'a> {
@@ -368,6 +371,8 @@ impl<'a> State<'a> {
 
         let time = std::time::Instant::now();
 
+        let gui = Gui::new(None, &window, &config, &device, &queue);
+
         Self {
             surface,
             device,
@@ -386,6 +391,7 @@ impl<'a> State<'a> {
             raymarch_uniform_bind_group,
             raymarch_texture_bind_group,
             time,
+            gui,
         }
     }
 
@@ -429,6 +435,8 @@ impl<'a> State<'a> {
             0,
             bytemuck::cast_slice(&[RADIUS * Rad(time).cos(), 1.0, RADIUS * Rad(time).sin()]),
         );
+
+        self.gui.prepare_frame(self.window);
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -476,6 +484,10 @@ impl<'a> State<'a> {
             render_pass.set_bind_group(1, &self.raymarch_texture_bind_group, &[]);
             // No vertex buffer. The vertices are hardcoded in the vertex shader.
             render_pass.draw(0..6, 0..1);
+
+            // gui
+            self.gui
+                .render_ui(&self.window, &self.queue, &self.device, &mut render_pass);
         }
 
         // submit will accept anything that implements IntoIter
@@ -494,56 +506,60 @@ pub async fn run() {
     let mut state = State::new(&window).await;
 
     event_loop
-        .run(move |event, control_flow| match event {
-            Event::WindowEvent {
-                ref event,
-                window_id,
-            } if window_id == state.window().id() => {
-                if !state.input(event) {
-                    match event {
-                        WindowEvent::CloseRequested
-                        | WindowEvent::KeyboardInput {
-                            event:
-                                KeyEvent {
-                                    state: ElementState::Pressed,
-                                    physical_key: PhysicalKey::Code(KeyCode::Escape),
-                                    ..
-                                },
-                            ..
-                        } => control_flow.exit(),
-                        WindowEvent::Resized(physical_size) => {
-                            state.resize(*physical_size);
-                        }
-                        WindowEvent::RedrawRequested => {
-                            // This tells winit that we want another frame after this one
-                            state.window().request_redraw();
+        .run(move |event, control_flow| {
+            state.gui.handle_event(state.window, &event);
 
-                            state.update();
-                            match state.render() {
-                                Ok(_) => {}
-                                // Reconfigure the surface if it's lost or outdated
-                                Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                                    state.resize(state.size)
-                                }
-                                // The system is out of memory, we should probably quit
-                                Err(
-                                    wgpu::SurfaceError::OutOfMemory | wgpu::SurfaceError::Other,
-                                ) => {
-                                    log::error!("OutOfMemory");
-                                    control_flow.exit();
-                                }
+            match event {
+                Event::WindowEvent {
+                    ref event,
+                    window_id,
+                } if window_id == state.window().id() => {
+                    if !state.input(event) {
+                        match event {
+                            WindowEvent::CloseRequested
+                            | WindowEvent::KeyboardInput {
+                                event:
+                                    KeyEvent {
+                                        state: ElementState::Pressed,
+                                        physical_key: PhysicalKey::Code(KeyCode::Escape),
+                                        ..
+                                    },
+                                ..
+                            } => control_flow.exit(),
+                            WindowEvent::Resized(physical_size) => {
+                                state.resize(*physical_size);
+                            }
+                            WindowEvent::RedrawRequested => {
+                                // This tells winit that we want another frame after this one
+                                state.window().request_redraw();
 
-                                // This happens when the a frame takes too long to present
-                                Err(wgpu::SurfaceError::Timeout) => {
-                                    log::warn!("Surface timeout")
+                                state.update();
+                                match state.render() {
+                                    Ok(_) => {}
+                                    // Reconfigure the surface if it's lost or outdated
+                                    Err(
+                                        wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
+                                    ) => state.resize(state.size),
+                                    // The system is out of memory, we should probably quit
+                                    Err(
+                                        wgpu::SurfaceError::OutOfMemory | wgpu::SurfaceError::Other,
+                                    ) => {
+                                        log::error!("OutOfMemory");
+                                        control_flow.exit();
+                                    }
+
+                                    // This happens when the a frame takes too long to present
+                                    Err(wgpu::SurfaceError::Timeout) => {
+                                        log::warn!("Surface timeout")
+                                    }
                                 }
                             }
+                            _ => {}
                         }
-                        _ => {}
                     }
                 }
+                _ => {}
             }
-            _ => {}
         })
         .unwrap();
 }
