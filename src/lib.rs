@@ -35,6 +35,7 @@ struct State<'a> {
     screen_size_buffer: wgpu::Buffer,
     light_pos_buffer: wgpu::Buffer,
     aabb_buffer: wgpu::Buffer,
+    cloud_noise_scale_factor_buffer: wgpu::Buffer,
     raymarch_uniform_bind_group: wgpu::BindGroup,
     raymarch_texture_bind_group: wgpu::BindGroup,
     time: std::time::Instant,
@@ -138,6 +139,13 @@ impl<'a> State<'a> {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
+        let cloud_noise_scale_factor_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Cloud Noise Scale Factor Buffer"),
+                contents: bytemuck::cast_slice(&[0.0]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+
         let raymarch_uniform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
@@ -181,6 +189,16 @@ impl<'a> State<'a> {
                         },
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ],
                 label: Some("raymarch_uniform_bind_group_layout"),
             });
@@ -203,6 +221,10 @@ impl<'a> State<'a> {
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: light_pos_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: cloud_noise_scale_factor_buffer.as_entire_binding(),
                 },
             ],
             label: Some("raymarch_uniform_bind_group"),
@@ -390,6 +412,7 @@ impl<'a> State<'a> {
             screen_size_buffer,
             light_pos_buffer,
             aabb_buffer,
+            cloud_noise_scale_factor_buffer,
             raymarch_uniform_bind_group,
             raymarch_texture_bind_group,
             time,
@@ -444,9 +467,25 @@ impl<'a> State<'a> {
             bytemuck::cast_slice(&[RADIUS * Rad(time).cos(), 1.0, RADIUS * Rad(time).sin()]),
         );
 
-        let aabb = self.gui.state().aabb;
+        let gui_state = self.gui.state();
+
+        let aabb = gui_state.aabb;
         self.queue
             .write_buffer(&self.aabb_buffer, 0, bytemuck::cast_slice(&[aabb]));
+
+        let max_length = aabb
+            .max
+            .into_iter()
+            .zip(aabb.min.into_iter())
+            .map(|(max, min)| max - min)
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap_or(0.0);
+        let cloud_noise_scale_factor = 1.0 / max_length;
+        self.queue.write_buffer(
+            &self.cloud_noise_scale_factor_buffer,
+            0,
+            bytemuck::cast_slice(&[cloud_noise_scale_factor]),
+        );
 
         self.gui.prepare_frame(self.window);
     }

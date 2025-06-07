@@ -41,6 +41,8 @@ var<uniform> aabb: AABBUniform;
 var<uniform> screen_size: vec2<u32>;
 @group(0) @binding(3)
 var<uniform> light_pos: vec3<f32>;
+@group(0) @binding(4)
+var<uniform> cloud_noise_scale_factor: f32;
 
 @group(1) @binding(0)
 var texture_cloud_noise: texture_3d<f32>;
@@ -179,7 +181,7 @@ fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
 }
 
 fn sample_density(pos: vec3<f32>) -> f32 {
-    let uvw = (pos - aabb.min) / (aabb.max - aabb.min);
+    let uvw = (pos - aabb.min) * cloud_noise_scale_factor;
     return textureSample(texture_cloud_noise, sampler_cloud_noise, uvw).r;
 }
 
