@@ -1,24 +1,34 @@
 use std::path::PathBuf;
 
-use imgui::Condition;
+use imgui::{Condition, Ui};
 use imgui_winit_support::HiDpiMode;
 use winit::{event::Event, window::Window};
 
-use crate::texture;
+use crate::{models::AABB, texture};
+
+pub struct State {
+    pub aabb: AABB,
+}
 
 pub struct Gui {
     context: imgui::Context,
     platform: imgui_winit_support::WinitPlatform,
     renderer: imgui_wgpu::Renderer,
+    state: State,
 }
 
 impl Gui {
+    pub fn state(&self) -> &State {
+        &self.state
+    }
+
     pub fn new(
         ini_filename: impl Into<Option<PathBuf>>,
         window: &Window,
         config: &wgpu::SurfaceConfiguration,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        state: State,
     ) -> Self {
         let mut context = imgui::Context::create();
         context.set_ini_filename(ini_filename);
@@ -38,6 +48,7 @@ impl Gui {
             context,
             platform,
             renderer,
+            state,
         }
     }
 
@@ -61,11 +72,28 @@ impl Gui {
     ) {
         let ui = self.context.frame();
 
-        ui.window("Test")
-            .size([300.0, 100.0], Condition::FirstUseEver)
+        ui.window("Controls")
+            .size([300.0, 300.0], Condition::FirstUseEver)
             .build(|| {
-                ui.text("Test");
-                ui.slider("no use slider", 10.0, 120.0, &mut 0.0);
+                const XYZ_MIN: [f32; 3] = [-5.0; 3];
+                const XYZ_MAX: [f32; 3] = [5.0; 3];
+                let aabb = &mut self.state.aabb;
+
+                ui.text("AABB Min");
+                ui.slider_float3(
+                    &["min x", "min y", "min z"],
+                    &mut aabb.min,
+                    &XYZ_MIN,
+                    &aabb.max,
+                );
+
+                ui.text("AABB Max");
+                ui.slider_float3(
+                    &["max x", "max y", "max z"],
+                    &mut aabb.max,
+                    &aabb.min,
+                    &XYZ_MAX,
+                );
             });
 
         self.platform.prepare_render(ui, window);
@@ -73,5 +101,46 @@ impl Gui {
         self.renderer
             .render(draw_data, queue, &device, render_pass)
             .expect("Rendering failed");
+    }
+
+    pub fn want_capture_window_event(&self) -> bool {
+        let io = self.context.io();
+        io.want_capture_keyboard || io.want_capture_mouse
+    }
+}
+
+pub trait UiExtension {
+    fn slider_float3(
+        &self,
+        labels: &[&str; 3],
+        values: &mut [f32; 3],
+        mins: &[f32; 3],
+        maxs: &[f32; 3],
+    ) -> bool;
+}
+
+impl UiExtension for Ui {
+    fn slider_float3(
+        &self,
+        labels: &[&str; 3],
+        values: &mut [f32; 3],
+        mins: &[f32; 3],
+        maxs: &[f32; 3],
+    ) -> bool {
+        let mut is_edited = false;
+        for i in 0..3 {
+            self.slider(labels[i], mins[i], maxs[i], &mut values[i])
+                .then(|| {
+                    is_edited = true;
+                });
+
+            if values[i] < mins[i] {
+                values[i] = mins[i];
+            } else if values[i] > maxs[i] {
+                values[i] = maxs[i];
+            }
+        }
+
+        is_edited
     }
 }

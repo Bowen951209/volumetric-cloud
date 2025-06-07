@@ -34,6 +34,7 @@ struct State<'a> {
     camera_buffer: wgpu::Buffer,
     screen_size_buffer: wgpu::Buffer,
     light_pos_buffer: wgpu::Buffer,
+    aabb_buffer: wgpu::Buffer,
     raymarch_uniform_bind_group: wgpu::BindGroup,
     raymarch_texture_bind_group: wgpu::BindGroup,
     time: std::time::Instant,
@@ -371,7 +372,7 @@ impl<'a> State<'a> {
 
         let time = std::time::Instant::now();
 
-        let gui = Gui::new(None, &window, &config, &device, &queue);
+        let gui = Gui::new(None, &window, &config, &device, &queue, gui::State { aabb });
 
         Self {
             surface,
@@ -388,6 +389,7 @@ impl<'a> State<'a> {
             camera_buffer,
             screen_size_buffer,
             light_pos_buffer,
+            aabb_buffer,
             raymarch_uniform_bind_group,
             raymarch_texture_bind_group,
             time,
@@ -417,6 +419,11 @@ impl<'a> State<'a> {
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
+        // If the GUI wants control, don't handle the event in the game
+        if self.gui.want_capture_window_event() {
+            return false;
+        }
+
         self.camera_controller.process_events(event)
     }
 
@@ -428,6 +435,7 @@ impl<'a> State<'a> {
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
+
         const RADIUS: f32 = 2.0;
         let time = self.time.elapsed().as_secs_f32();
         self.queue.write_buffer(
@@ -435,6 +443,10 @@ impl<'a> State<'a> {
             0,
             bytemuck::cast_slice(&[RADIUS * Rad(time).cos(), 1.0, RADIUS * Rad(time).sin()]),
         );
+
+        let aabb = self.gui.state().aabb;
+        self.queue
+            .write_buffer(&self.aabb_buffer, 0, bytemuck::cast_slice(&[aabb]));
 
         self.gui.prepare_frame(self.window);
     }
