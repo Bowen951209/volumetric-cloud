@@ -1,16 +1,17 @@
+mod bind_groups;
 mod camera;
 mod fps;
 mod gui;
 mod models;
 mod texture;
 
-use std::path::Path;
+use std::{io::Write, path::Path};
 
 use camera::{CameraController, CameraUniform};
 use cgmath::{Angle, Rad};
 use fps::FpsCounter;
 use gui::{DisplayInfo, Gui};
-use wgpu::{TextureView, util::DeviceExt};
+use wgpu::{Extent3d, TextureView, util::DeviceExt};
 use winit::{
     event::*,
     event_loop::EventLoop,
@@ -39,11 +40,12 @@ struct State<'a> {
     light_pos_buffer: wgpu::Buffer,
     aabb_buffer: wgpu::Buffer,
     cloud_noise_scale_factor_buffer: wgpu::Buffer,
-    raymarch_uniform_bind_group: wgpu::BindGroup,
-    raymarch_texture_bind_group: wgpu::BindGroup,
+    raymarch_uniform_bind_group: bind_groups::BindGroup,
+    raymarch_texture_bind_group: bind_groups::BindGroup,
     time: std::time::Instant,
     gui: Gui,
     fps_counter: FpsCounter,
+    blue_noise_texture: wgpu::Texture,
 }
 
 impl<'a> State<'a> {
@@ -150,91 +152,16 @@ impl<'a> State<'a> {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
-        let raymarch_uniform_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 4,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
-                label: Some("raymarch_uniform_bind_group_layout"),
-            });
+        let raymarch_uniform_bind_group = bind_groups::create_raymarch_uniform_bind_group(
+            &device,
+            &camera_buffer,
+            &aabb_buffer,
+            &screen_size_buffer,
+            &light_pos_buffer,
+            &cloud_noise_scale_factor_buffer,
+        );
 
-        let raymarch_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &raymarch_uniform_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: camera_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: aabb_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: screen_size_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: light_pos_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: cloud_noise_scale_factor_buffer.as_entire_binding(),
-                },
-            ],
-            label: Some("raymarch_uniform_bind_group"),
-        });
-
-        let cloud_noise_texture3d = texture::create_noise_texture_3d(
+        let cloud_noise_texture_3d = texture::create_noise_texture_3d(
             &device,
             &queue,
             wgpu::Extent3d {
@@ -251,91 +178,11 @@ impl<'a> State<'a> {
             texture::load_texture_2d_gray(&device, &queue, &Path::new("assets/blue_noise.png"))
                 .unwrap();
 
-        let raymarch_texture_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D3,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
-                        count: None,
-                    },
-                ],
-                label: Some("raymarch_texture_bind_group_layout"),
-            });
-
-        let raymarch_texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &raymarch_texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        &cloud_noise_texture3d.create_view(&Default::default()),
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&device.create_sampler(
-                        &wgpu::SamplerDescriptor {
-                            address_mode_u: wgpu::AddressMode::ClampToEdge,
-                            address_mode_v: wgpu::AddressMode::ClampToEdge,
-                            address_mode_w: wgpu::AddressMode::ClampToEdge,
-                            mag_filter: wgpu::FilterMode::Nearest,
-                            min_filter: wgpu::FilterMode::Nearest,
-                            mipmap_filter: wgpu::FilterMode::Nearest,
-                            ..Default::default()
-                        },
-                    )),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(
-                        &blue_noise_texture.create_view(&Default::default()),
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&device.create_sampler(
-                        &wgpu::SamplerDescriptor {
-                            address_mode_u: wgpu::AddressMode::ClampToEdge,
-                            address_mode_v: wgpu::AddressMode::ClampToEdge,
-                            address_mode_w: wgpu::AddressMode::ClampToEdge,
-                            mag_filter: wgpu::FilterMode::Nearest,
-                            min_filter: wgpu::FilterMode::Nearest,
-                            mipmap_filter: wgpu::FilterMode::Nearest,
-                            ..Default::default()
-                        },
-                    )),
-                },
-            ],
-            label: Some("raymarch_texture_bind_group"),
-        });
+        let raymarch_texture_bind_group = bind_groups::create_raymarch_texture_bind_group(
+            &device,
+            &cloud_noise_texture_3d.create_view(&wgpu::TextureViewDescriptor::default()),
+            &blue_noise_texture.create_view(&wgpu::TextureViewDescriptor::default()),
+        );
 
         let camera_controller = CameraController::new(0.02, 0.005);
 
@@ -343,8 +190,8 @@ impl<'a> State<'a> {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
-                    &raymarch_uniform_bind_group_layout,
-                    &raymarch_texture_bind_group_layout,
+                    &raymarch_uniform_bind_group.layout,
+                    &raymarch_texture_bind_group.layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -398,7 +245,21 @@ impl<'a> State<'a> {
 
         let time = std::time::Instant::now();
 
-        let gui = Gui::new(None, &window, &config, &device, &queue, gui::State { aabb });
+        let gui = Gui::new(
+            None,
+            &window,
+            &config,
+            &device,
+            &queue,
+            gui::State {
+                aabb,
+                cloud_noise_size_power: 6,
+                cloud_noise_frequency: 0.08,
+                cloud_noise_seed: 0,
+                should_create_new_cloud_noise: false,
+                cloud_noise_size: 64,
+            },
+        );
 
         let fps_counter = FpsCounter::default();
 
@@ -425,6 +286,7 @@ impl<'a> State<'a> {
             time,
             gui,
             fps_counter,
+            blue_noise_texture,
         }
     }
 
@@ -496,6 +358,32 @@ impl<'a> State<'a> {
             bytemuck::cast_slice(&[cloud_noise_scale_factor]),
         );
 
+        if gui_state.should_create_new_cloud_noise {
+            print!("Generating Cloud Noise...");
+            std::io::stdout().flush().unwrap();
+            let cloud_noise_texture_3d = texture::create_noise_texture_3d(
+                &self.device,
+                &self.queue,
+                Extent3d {
+                    width: gui_state.cloud_noise_size,
+                    height: gui_state.cloud_noise_size,
+                    depth_or_array_layers: gui_state.cloud_noise_size,
+                },
+                Some("Cloud Noise Texture"),
+                gui_state.cloud_noise_seed,
+                gui_state.cloud_noise_frequency,
+            );
+
+            self.raymarch_texture_bind_group = bind_groups::create_raymarch_texture_bind_group(
+                &self.device,
+                &cloud_noise_texture_3d.create_view(&wgpu::TextureViewDescriptor::default()),
+                &self
+                    .blue_noise_texture
+                    .create_view(&wgpu::TextureViewDescriptor::default()),
+            );
+            println!("Done.");
+        }
+
         self.gui.prepare_frame(self.window);
     }
 
@@ -541,8 +429,8 @@ impl<'a> State<'a> {
 
             // Draw full screen quad.
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.raymarch_uniform_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.raymarch_texture_bind_group, &[]);
+            render_pass.set_bind_group(0, &self.raymarch_uniform_bind_group.bind_group, &[]);
+            render_pass.set_bind_group(1, &self.raymarch_texture_bind_group.bind_group, &[]);
             // No vertex buffer. The vertices are hardcoded in the vertex shader.
             render_pass.draw(0..6, 0..1);
 

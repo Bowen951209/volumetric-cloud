@@ -8,6 +8,11 @@ use crate::{models::AABB, texture};
 
 pub struct State {
     pub aabb: AABB,
+    pub cloud_noise_size: u32,
+    pub cloud_noise_size_power: u8,
+    pub cloud_noise_frequency: f64,
+    pub cloud_noise_seed: u32,
+    pub should_create_new_cloud_noise: bool,
 }
 
 pub struct DisplayInfo {
@@ -124,6 +129,31 @@ impl Gui {
                     "Light Position: {}",
                     Gui::position_format(info.light_position)
                 ));
+            });
+
+        // Cloud noise
+        ui.window("Cloud Noise")
+            .size([300.0, 300.0], Condition::FirstUseEver)
+            .build(|| {
+                // size power
+                ui.slider("size power", 6, 16, &mut self.state.cloud_noise_size_power);
+                self.state.cloud_noise_size = 1u32 << self.state.cloud_noise_size_power;
+                ui.text(format!("Texture size: {}", self.state.cloud_noise_size));
+
+                // frequency
+                ui.slider(
+                    "frequency",
+                    0.001,
+                    1.0,
+                    &mut self.state.cloud_noise_frequency,
+                );
+
+                // seed
+                ui.input_scalar("seed", &mut self.state.cloud_noise_seed)
+                    .build();
+
+                // generate button
+                self.state.should_create_new_cloud_noise = ui.button("Generate");
             });
 
         self.platform.prepare_render(ui, window);
