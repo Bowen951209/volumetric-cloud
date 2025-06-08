@@ -314,6 +314,7 @@ impl<'a> State<'a> {
     fn input(&mut self, event: &WindowEvent) -> bool {
         // If the GUI wants control, don't handle the event in the game
         if self.gui.want_capture_window_event() {
+            self.camera_controller.restore();
             return false;
         }
 

@@ -56,6 +56,15 @@ impl CameraController {
         }
     }
 
+    pub fn restore(&mut self) {
+        let move_speed = self.move_speed;
+        let rotation_speed = self.rotation_speed;
+
+        *self = Self::default();
+        self.move_speed = move_speed;
+        self.rotation_speed = rotation_speed;
+    }
+
     pub fn process_events(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::KeyboardInput {
