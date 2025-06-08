@@ -7,7 +7,7 @@ use std::path::Path;
 
 use camera::{CameraController, CameraUniform};
 use cgmath::{Angle, Rad};
-use gui::Gui;
+use gui::{DisplayInfo, Gui};
 use wgpu::{TextureView, util::DeviceExt};
 use winit::{
     event::*,
@@ -33,6 +33,7 @@ struct State<'a> {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     screen_size_buffer: wgpu::Buffer,
+    light_pos: [f32; 3],
     light_pos_buffer: wgpu::Buffer,
     aabb_buffer: wgpu::Buffer,
     cloud_noise_scale_factor_buffer: wgpu::Buffer,
@@ -410,6 +411,7 @@ impl<'a> State<'a> {
             camera_uniform,
             camera_buffer,
             screen_size_buffer,
+            light_pos: Default::default(),
             light_pos_buffer,
             aabb_buffer,
             cloud_noise_scale_factor_buffer,
@@ -461,10 +463,11 @@ impl<'a> State<'a> {
 
         const RADIUS: f32 = 2.0;
         let time = self.time.elapsed().as_secs_f32();
+        self.light_pos = [RADIUS * Rad(time).cos(), 1.0, RADIUS * Rad(time).sin()];
         self.queue.write_buffer(
             &self.light_pos_buffer,
             0,
-            bytemuck::cast_slice(&[RADIUS * Rad(time).cos(), 1.0, RADIUS * Rad(time).sin()]),
+            bytemuck::cast_slice(&self.light_pos),
         );
 
         let gui_state = self.gui.state();
@@ -537,8 +540,18 @@ impl<'a> State<'a> {
             render_pass.draw(0..6, 0..1);
 
             // gui
-            self.gui
-                .render_ui(&self.window, &self.queue, &self.device, &mut render_pass);
+            let info = DisplayInfo {
+                camera_position: self.camera.eye.into(),
+                light_position: self.light_pos,
+            };
+
+            self.gui.render_ui(
+                &self.window,
+                &self.queue,
+                &self.device,
+                &mut render_pass,
+                &info,
+            );
         }
 
         // submit will accept anything that implements IntoIter

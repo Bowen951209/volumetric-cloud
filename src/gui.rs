@@ -10,6 +10,11 @@ pub struct State {
     pub aabb: AABB,
 }
 
+pub struct DisplayInfo {
+    pub camera_position: [f32; 3],
+    pub light_position: [f32; 3],
+}
+
 pub struct Gui {
     context: imgui::Context,
     platform: imgui_winit_support::WinitPlatform,
@@ -69,9 +74,11 @@ impl Gui {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
         render_pass: &mut wgpu::RenderPass<'a>,
+        info: &DisplayInfo,
     ) {
         let ui = self.context.frame();
 
+        // Controls
         ui.window("Controls")
             .size([300.0, 300.0], Condition::FirstUseEver)
             .build(|| {
@@ -96,6 +103,23 @@ impl Gui {
                 );
             });
 
+        // Information
+        ui.window("Information")
+            .size([500.0, 300.0], Condition::FirstUseEver)
+            .build(|| {
+                // Camera position
+                ui.text(format!(
+                    "Camera Position: {}",
+                    Gui::position_format(info.camera_position)
+                ));
+
+                // Light position
+                ui.text(format!(
+                    "Light Position: {}",
+                    Gui::position_format(info.light_position)
+                ));
+            });
+
         self.platform.prepare_render(ui, window);
         let draw_data = self.context.render();
         self.renderer
@@ -106,6 +130,13 @@ impl Gui {
     pub fn want_capture_window_event(&self) -> bool {
         let io = self.context.io();
         io.want_capture_keyboard || io.want_capture_mouse
+    }
+
+    fn position_format(position: [f32; 3]) -> String {
+        format!(
+            "({:.3}, {:.3}, {:.3})",
+            position[0], position[1], position[2]
+        )
     }
 }
 
