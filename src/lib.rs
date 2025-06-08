@@ -1,4 +1,5 @@
 mod camera;
+mod fps;
 mod gui;
 mod models;
 mod texture;
@@ -7,6 +8,7 @@ use std::path::Path;
 
 use camera::{CameraController, CameraUniform};
 use cgmath::{Angle, Rad};
+use fps::FpsCounter;
 use gui::{DisplayInfo, Gui};
 use wgpu::{TextureView, util::DeviceExt};
 use winit::{
@@ -41,6 +43,7 @@ struct State<'a> {
     raymarch_texture_bind_group: wgpu::BindGroup,
     time: std::time::Instant,
     gui: Gui,
+    fps_counter: FpsCounter,
 }
 
 impl<'a> State<'a> {
@@ -397,6 +400,8 @@ impl<'a> State<'a> {
 
         let gui = Gui::new(None, &window, &config, &device, &queue, gui::State { aabb });
 
+        let fps_counter = FpsCounter::default();
+
         Self {
             surface,
             device,
@@ -419,6 +424,7 @@ impl<'a> State<'a> {
             raymarch_texture_bind_group,
             time,
             gui,
+            fps_counter,
         }
     }
 
@@ -494,6 +500,7 @@ impl<'a> State<'a> {
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        self.fps_counter.start_frame();
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -543,6 +550,7 @@ impl<'a> State<'a> {
             let info = DisplayInfo {
                 camera_position: self.camera.eye.into(),
                 light_position: self.light_pos,
+                fps: self.fps_counter.fps(),
             };
 
             self.gui.render_ui(

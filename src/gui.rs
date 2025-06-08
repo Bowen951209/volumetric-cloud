@@ -13,6 +13,7 @@ pub struct State {
 pub struct DisplayInfo {
     pub camera_position: [f32; 3],
     pub light_position: [f32; 3],
+    pub fps: Option<f32>,
 }
 
 pub struct Gui {
@@ -107,6 +108,11 @@ impl Gui {
         ui.window("Information")
             .size([500.0, 300.0], Condition::FirstUseEver)
             .build(|| {
+                // FPS
+                if let Some(fps) = info.fps {
+                    ui.text(format!("FPS: {:.0}", fps));
+                }
+
                 // Camera position
                 ui.text(format!(
                     "Camera Position: {}",
