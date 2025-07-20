@@ -54,9 +54,8 @@ impl<'a> State<'a> {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
-        // I use GL backend here, because some of my PCs are too old to support Vulkan
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::GL,
+            backends: wgpu::Backends::all().with_env(), // Users can set env vars to specify available backends
             ..Default::default()
         });
 
